@@ -137,6 +137,7 @@ IMPORTANT RULES:
 6. Check execution history to avoid repeating errors
 7.All outputs (Thought and Final Answer) must be in Hebrew only
 8. When generating answers based on a document, always provide a clear, natural, and human-readable response
+9.The response must focus only on the user’s question and the relevant content from the document, without meta-explanations or implementation details, Hebrew only.
 
 EXAMPLES OF GOOD CODE:
 - result = df['column_name'].sum()

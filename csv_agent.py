@@ -314,9 +314,8 @@ Always respond with pure Python code."""
     def _explain(self, question: str, result: Any) -> str:
         """Generate simple explanation in Hebrew"""
         result_str = str(result)[:200]
-        # Keep it concise and always in Hebrew
-        return f"עניתי לשאלה: '{question}'. התוצאה היא: {result_str}"
-    
+        # Return only the result without robotic phrasing
+        return result_str
     def _format_result(self, result: Any) -> str:
         """Format result for JSON"""
         if isinstance(result, pd.DataFrame):

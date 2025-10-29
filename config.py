@@ -25,7 +25,7 @@ else:
     MODEL_DEPLOYMENT = GEMMA_3_DEPLOYMENT
 
 # Agent Configuration
-MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", "6"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.1"))
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "100"))
 

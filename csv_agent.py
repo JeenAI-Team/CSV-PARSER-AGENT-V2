@@ -156,6 +156,7 @@ STRICT RULES:
 4. ONLY use the existing 'df' variable
 5. Write 1-2 concise lines
 6. Assign the final answer to 'result'
+7.answer in Hebrew only
 
 IF THE USER ASKS FOR A CHART/GRAPH (e.g., contains 'chart', 'graph', or 'גרף'):
 - DO NOT plot and DO NOT import visualization libraries

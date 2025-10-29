@@ -26,7 +26,7 @@ class DataAnalysisAgent:
         self,
         vllm_endpoint: str,
         model_deployment: str,
-        max_retries: int = 3,
+        max_retries: int = 6,
         temperature: float = 0.1
     ):
         """
@@ -138,6 +138,7 @@ IMPORTANT RULES:
 7.All outputs (Thought and Final Answer) must be in Hebrew only
 8. When generating answers based on a document, always provide a clear, natural, and human-readable response
 9.The response must focus only on the user’s question and the relevant content from the document, without meta-explanations or implementation details, Hebrew only.
+10. Keep analysis until you are certain of the final answer
 
 EXAMPLES OF GOOD CODE:
 - result = df['column_name'].sum()
@@ -149,6 +150,21 @@ EXAMPLES OF BAD CODE (DON'T DO THIS):
 - print(df['column'].mean())  # Don't print, assign to result
 - def calculate(): return df['col'].mean()  # Don't just define function
 - df['column'].mean()  # Don't leave hanging expression
+
+EXAMPLES OF GOOD Results:
+ Line | Description                           | Count  |
+|------|---------|----------------------------------------|--------:|
+| 1112 | Code validated and executed successfully |        |
+| 1113 | Result: airline count                  |        |
+| 1140 | Vistara                               | 127,859 |
+| 1151 | Air_India                             | 80,892  |
+| 1162  | Indigo                                | 43,120  |
+| 1173 | GO_FIRST                              | 23,173  |
+| 1184 | AirAsia                               | 16,098  |
+| 1195 | SpiceJet                              | 9,011   |
+
+EXAMPLES OF BAD Results:
+| Unnamed: 1 | Unnamed: 2 | Unnamed: 3 | Unnamed: 4 |....
 
 Use this format:
 

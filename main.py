@@ -306,13 +306,13 @@ async def get_config(api_key: str = Depends(verify_api_key)):
 
 
 if __name__ == "__main__":
-    print("=" * 80)
-    print("Data Analysis Agent API - Starting Server")
-    print("=" * 80)
-    print(f"Model: {GEMMA_3_DEPLOYMENT}")
-    print(f"Endpoint: {VLLM_ENDPOINT}")
-    print(f"Port: {SERVER_PORT}")
-    print(f"Timeout: {SERVER_TIMEOUT}s")
+   # print("=" * 80)
+    #print("Data Analysis Agent API - Starting Server")
+    #print("=" * 80)
+    #print(f"Model: {GEMMA_3_DEPLOYMENT}")
+    #print(f"Endpoint: {VLLM_ENDPOINT}")
+    #print(f"Port: {SERVER_PORT}")
+    #print(f"Timeout: {SERVER_TIMEOUT}s")
     print("=" * 80)
     
     uvicorn.run(

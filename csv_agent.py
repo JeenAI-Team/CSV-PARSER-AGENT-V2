@@ -66,25 +66,47 @@ class CSVAnalysisAgent:
             # Get preview (first 10 rows)
             preview = self._get_preview(df)
             
-            # Generate code with retries
+            # Generate code with retries and error feedback
             code = None
+            last_error = None
+            
             for attempt in range(1, self.max_retries + 1):
                 print(f"\nAttempt {attempt}/{self.max_retries}...")
-                code = self._generate_code(preview, question)
                 
-                if code and self._validate_code(code, df):
-                    print(f"✓ Code validated")
-                    break
+                # Pass previous error to help agent self-correct
+                code = self._generate_code(preview, question, previous_error=last_error)
+                
+                # Try to execute and validate
+                validation_result = self._validate_code_with_execution(code, df)
+                
+                if validation_result['valid']:
+                    print(f"✓ Code validated and executed successfully")
+                    # Return the successful result immediately
+                    result = validation_result['result']
+                    explanation = self._explain_result(question, code, result)
+                    
+                    print(f"✓ Result: {str(result)[:200]}...")
+                    print(f"✓ Complete!\n")
+                    
+                    return {
+                        "status": "success",
+                        "result": self._format_result(result),
+                        "code": code,
+                        "file_info": preview,
+                        "explanation": explanation,
+                        "attempts": attempt
+                    }
                 else:
-                    print(f"✗ Code invalid, retrying...")
+                    print(f"✗ Code execution failed: {validation_result['error']}")
+                    last_error = validation_result['error']
                     code = None
             
-            if not code:
-                return {
-                    "status": "error",
-                    "error": "Failed to generate valid code",
-                    "attempts": self.max_retries
-                }
+            # If all attempts failed, return the last error
+            return {
+                "status": "error",
+                "error": f"Failed after {self.max_retries} attempts. Last error: {last_error}",
+                "attempts": self.max_retries
+            }
             
             # Execute code
             print(f"\n{code}\n")
@@ -117,26 +139,72 @@ class CSVAnalysisAgent:
             }
     
     def _load_file(self, file_path: str) -> pd.DataFrame:
-        """Load CSV or Excel file"""
+        """Load CSV or Excel file with encoding detection"""
         if file_path.lower().endswith(('.xlsx', '.xls')):
             return pd.read_excel(file_path)
-        return pd.read_csv(file_path)
+        
+        # Try multiple encodings for CSV files (common for Hebrew files)
+        encodings_to_try = ['utf-8', 'windows-1255', 'iso-8859-8', 'cp1252', 'latin1']
+        
+        for encoding in encodings_to_try:
+            try:
+                df = pd.read_csv(file_path, encoding=encoding)
+                print(f"✓ Successfully loaded CSV with encoding: {encoding}")
+                return df
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+            except Exception as e:
+                # If it's not an encoding error, raise it
+                if "codec can't decode" not in str(e):
+                    raise
+        
+        # If all encodings fail, try with errors='ignore'
+        print("⚠️ Warning: Using fallback encoding with errors='ignore'")
+        return pd.read_csv(file_path, encoding='utf-8', errors='ignore')
     
     def _get_preview(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Get first 10 rows preview"""
-        preview_df = df.head(10)
+        """Get safe DataFrame preview for JSON serialization"""
+        # Get sample data and convert NaN/NaT to None for JSON serialization
+        sample_data = df.head(10).replace({pd.NaT: None, np.nan: None}).to_dict(orient='records')
+        
+        # Clean sample data - ensure all values are JSON serializable
+        cleaned_sample = []
+        for row in sample_data:
+            cleaned_row = {}
+            for key, value in row.items():
+                if pd.isna(value) or value is pd.NaT:
+                    cleaned_row[key] = None
+                elif isinstance(value, (np.integer, np.floating)):
+                    cleaned_row[key] = float(value) if np.isnan(value) else value.item()
+                elif isinstance(value, (pd.Timestamp, pd.Timedelta)):
+                    cleaned_row[key] = str(value)
+                else:
+                    cleaned_row[key] = value
+            cleaned_sample.append(cleaned_row)
         
         return {
-            "total_rows": len(df),
-            "total_columns": len(df.columns),
             "columns": list(df.columns),
             "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
-            "sample_data": preview_df.to_dict(orient='records'),
+            "sample_data": cleaned_sample,
+            "total_rows": len(df),
             "shape": df.shape
         }
     
-    def _generate_code(self, preview: Dict[str, Any], question: str) -> Optional[str]:
-        """Generate Python code using vLLM"""
+    def _generate_code(self, preview: Dict[str, Any], question: str, previous_error: Optional[str] = None) -> Optional[str]:
+        """Generate Python code using vLLM with optional error feedback for self-correction"""
+        
+        # Build error feedback section
+        error_feedback = ""
+        if previous_error:
+            error_feedback = f"""
+PREVIOUS ATTEMPT FAILED WITH ERROR:
+{previous_error}
+
+Please fix the error and try again. Common issues:
+- KeyError: Check column names match exactly
+- ValueError: Ensure data types are compatible
+- TypeError: Handle NaN/None values properly
+"""
         
         # VERY STRONG prompt that prevents DataFrame creation
         # and converts chart intent into tabular aggregation output
@@ -146,7 +214,7 @@ DATA ALREADY IN 'df':
 Columns: {preview['columns']}
 Total rows: {preview['total_rows']}
 Sample (first 2 rows): {json.dumps(preview['sample_data'][:2], ensure_ascii=False)}
-
+{error_feedback}
 QUESTION: {question}
 
 STRICT RULES:
@@ -156,7 +224,8 @@ STRICT RULES:
 4. ONLY use the existing 'df' variable
 5. Write 1-2 concise lines
 6. Assign the final answer to 'result'
-7.answer in Hebrew only
+7. Answer in Hebrew only
+8. Handle NaN/None values gracefully with .fillna() or .dropna() if needed
 
 IF THE USER ASKS FOR A CHART/GRAPH (e.g., contains 'chart', 'graph', or 'גרף'):
 - DO NOT plot and DO NOT import visualization libraries
@@ -278,8 +347,13 @@ Always respond with pure Python code."""
         
         return None
     
-    def _validate_code(self, code: str, df: pd.DataFrame) -> bool:
-        """Test if code works and doesn't create new DataFrames"""
+    def _validate_code_with_execution(self, code: str, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Test if code works, execute it, and return result with error feedback.
+        This combines validation and execution for better self-correction.
+        """
+        if not code:
+            return {"valid": False, "error": "No code generated", "result": None}
         
         # REJECT code that creates new DataFrames (sign of hallucination)
         forbidden_patterns = [
@@ -291,20 +365,61 @@ Always respond with pure Python code."""
         
         for pattern in forbidden_patterns:
             if pattern in code:
-                print(f"  ✗ Code creates new DataFrame - REJECTED")
-                return False
+                return {
+                    "valid": False,
+                    "error": f"Code creates new DataFrame using '{pattern}' - must use existing 'df' variable only",
+                    "result": None
+                }
         
         # MUST use the existing 'df' variable
         if 'df[' not in code and 'df.' not in code and 'df ' not in code:
-            print(f"  ✗ Code doesn't use existing 'df' - REJECTED")
-            return False
+            return {
+                "valid": False,
+                "error": "Code doesn't reference existing 'df' variable - must use 'df' to access the loaded data",
+                "result": None
+            }
         
+        # Try to execute the code
         try:
             namespace = {"df": df, "pd": pd, "np": np}
             exec(code, namespace)
-            return "result" in namespace
-        except:
-            return False
+            
+            if "result" not in namespace:
+                return {
+                    "valid": False,
+                    "error": "Code executed but didn't assign to 'result' variable",
+                    "result": None
+                }
+            
+            return {
+                "valid": True,
+                "error": None,
+                "result": namespace["result"]
+            }
+            
+        except KeyError as e:
+            return {
+                "valid": False,
+                "error": f"KeyError: Column {str(e)} not found. Available columns: {list(df.columns)}",
+                "result": None
+            }
+        except ValueError as e:
+            return {
+                "valid": False,
+                "error": f"ValueError: {str(e)}. Check data types and handle NaN values",
+                "result": None
+            }
+        except Exception as e:
+            return {
+                "valid": False,
+                "error": f"{type(e).__name__}: {str(e)}",
+                "result": None
+            }
+    
+    def _validate_code(self, code: str, df: pd.DataFrame) -> bool:
+        """DEPRECATED: Use _validate_code_with_execution instead"""
+        result = self._validate_code_with_execution(code, df)
+        return result['valid']
     
     def _execute_code(self, code: str, df: pd.DataFrame) -> Any:
         """Execute code and return result"""

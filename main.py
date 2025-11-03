@@ -12,7 +12,7 @@ import os
 import base64
 import uvicorn
 
-from csv_agent import CSVAnalysisAgent
+from agent import DataAnalysisAgent
 from config import (
     get_agent_config,
     validate_config,
@@ -49,8 +49,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize agent globally
-agent = CSVAnalysisAgent(**get_agent_config())
+# Initialize agent globally  
+agent = DataAnalysisAgent(**get_agent_config())
 
 
 # Request/Response Models

@@ -18,6 +18,10 @@ API_KEY = os.getenv("API_KEY", "")
 GEMMA_3_DEPLOYMENT = os.getenv("GEMMA_3_DEPLOYMENT", "vllm-google/gemma-3-12b-it")
 VLLM_ENDPOINT = os.getenv("VLLM_ENDPOINT", "")
 
+# Multi-Provider Support
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "vllm").lower()  # vllm, azure, openai
+API_KEY_LLM = os.getenv("API_KEY_LLM", "")  # API key for Azure/OpenAI
+
 # Extract model deployment from GEMMA_3_DEPLOYMENT (remove vllm- prefix)
 if GEMMA_3_DEPLOYMENT.startswith("vllm-"):
     MODEL_DEPLOYMENT = GEMMA_3_DEPLOYMENT[5:]  # Remove 'vllm-' prefix
@@ -35,12 +39,21 @@ def get_agent_config():
     if not VLLM_ENDPOINT:
         raise ValueError("VLLM_ENDPOINT environment variable is required")
     
-    return {
+    config = {
         "vllm_endpoint": VLLM_ENDPOINT,
         "model_deployment": MODEL_DEPLOYMENT,
         "max_retries": MAX_RETRIES,
-        "temperature": TEMPERATURE
+        "temperature": TEMPERATURE,
+        "provider": LLM_PROVIDER
     }
+    
+    # Add API key for Azure/OpenAI
+    if LLM_PROVIDER in ["azure", "openai"]:
+        if not API_KEY_LLM:
+            raise ValueError("API_KEY_LLM required for Azure/OpenAI provider")
+        config["api_key"] = API_KEY_LLM
+    
+    return config
 
 
 def validate_config():

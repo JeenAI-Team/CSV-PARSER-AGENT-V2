@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+*.md
+!README.md
+TEST_SCENARIOS.md
+TIMEOUT_ARCHITECTURE.md
+ENV_VARIABLES_REFERENCE.md
+OPENSHIFT_DEPLOYMENT.md
+MIGRATION_GUIDE.md
+SUMMARY.md
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,54 @@
+# OpenShift-ready Python app image for CSV Parser Agent
+# Designed for air-gapped (non-internet) environments
+
+FROM python:3.12-slim
+
+# Environment
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    HOME=/tmp \
+    PORT=8000 \
+    port=8000
+
+# System dependencies - minimal for air-gapped environment
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      gcc \
+      g++ \
+      curl \
+      ca-certificates \
+      dos2unix \
+    && rm -rf /var/lib/apt/lists/*
+
+# Workdir
+WORKDIR /app
+
+# Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
+
+# App code & entrypoint
+COPY agent.py config.py csv_agent.py main.py /app/
+COPY entrypoint.sh /entrypoint.sh
+
+# OpenShift: arbitrary UID support (gid 0 with group-writable paths)
+# This is critical for OpenShift's security model
+RUN dos2unix /entrypoint.sh \
+ && chmod +x /entrypoint.sh \
+ && mkdir -p /app/temp /app/.cache /tmp \
+ && chgrp -R 0 /app /tmp /entrypoint.sh \
+ && chmod -R g=u /app /tmp \
+ && chmod g+rx /entrypoint.sh
+
+# Non-root; OpenShift may override UID, but gid 0 remains
+USER 1001:0
+
+# Expose port
+EXPOSE 8000
+
+# Health check (optional but recommended for OpenShift)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/ || exit 1
+
+CMD ["/bin/sh", "/entrypoint.sh"]

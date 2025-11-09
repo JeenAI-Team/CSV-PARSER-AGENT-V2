@@ -4,7 +4,7 @@ uvicorn[standard]==0.27.1
 
 # LangChain
 langchain>=1.0.1
-langchain-community>=0.3.31
+langchain-community==0.3.30
 langchain-core>=1.0.0
 langchain-openai>=1.0.0
 
@@ -12,8 +12,8 @@ langchain-openai>=1.0.0
 openai>=2.6.0
 
 # Data processing
-pandas==2.2.0
-numpy==1.26.4
+pandas>=2.2.0
+numpy>=1.26.4
 openpyxl==3.1.2
 
 # HTTP clients

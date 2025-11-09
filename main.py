@@ -6,7 +6,7 @@ Production-ready with parallel request support and API key authentication
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import tempfile
 import os
 import base64
@@ -63,6 +63,31 @@ class Base64AnalysisRequest(BaseModel):
     provider: Optional[str] = None  # From playground-backend
     encoding: Optional[str] = None
     delimiter: Optional[str] = None
+
+
+class MessageContent(BaseModel):
+    """Content item in a message (text or file)"""
+    type: str  # "text" or "file"
+    text: Optional[str] = None
+    filename: Optional[str] = None
+    data: Optional[str] = None  # base64 encoded file data
+
+
+class Message(BaseModel):
+    """A message in the conversation"""
+    role: str  # "user", "assistant", etc.
+    content: List[MessageContent]
+
+
+class AgentRunRequest(BaseModel):
+    """Request model for /api/v1/agent/run endpoint - new format"""
+    model: str
+    messages: List[Message]
+
+
+class AgentRunResponse(BaseModel):
+    """Response model for /api/v1/agent/run endpoint"""
+    response: str
 
 
 class AnalysisResponse(BaseModel):
@@ -274,6 +299,101 @@ async def analyze_excel_base64(
         background_tasks.add_task(cleanup_file, temp_path)
         
         return AnalysisResponse(**result)
+    
+    except Exception as e:
+        # Cleanup on error
+        background_tasks.add_task(cleanup_file, temp_path)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/agent/run", response_model=AgentRunResponse)
+async def agent_run(
+    background_tasks: BackgroundTasks,
+    request: AgentRunRequest,
+    x_jeen_csv_service: str = Header(None, alias="x-jeen-csv-service")
+):
+    """
+    New agent run endpoint compatible with updated CsvParserService.
+    Accepts messages array with text and file content.
+    
+    Args:
+        request: Request containing model and messages array
+        
+    Returns:
+        Response with analysis result in response field
+    """
+    # Verify API key
+    await verify_api_key(x_jeen_csv_service)
+    
+    # Extract the last user message (should contain text and file)
+    user_messages = [msg for msg in request.messages if msg.role == "user"]
+    if not user_messages:
+        raise HTTPException(status_code=400, detail="No user message found")
+    
+    last_message = user_messages[-1]  # Get the last user message
+    
+    # Extract text instruction and file content
+    instruction = None
+    file_content = None
+    filename = None
+    
+    for content_item in last_message.content:
+        if content_item.type == "text":
+            instruction = content_item.text
+        elif content_item.type == "file":
+            file_content = content_item.data
+            filename = content_item.filename
+    
+    if not instruction:
+        raise HTTPException(status_code=400, detail="No text instruction found in message")
+    
+    if not file_content:
+        raise HTTPException(status_code=400, detail="No file content found in message")
+    
+    if not filename:
+        raise HTTPException(status_code=400, detail="No filename found in message")
+    
+    # Log request
+    print(f"\n[API] Received agent run request:")
+    print(f"- Model: {request.model}")
+    print(f"- Instruction: {instruction[:100]}...")
+    print(f"- Filename: {filename}\n")
+    
+    # Decode base64 file content
+    try:
+        if "," in file_content:
+            file_content = file_content.split(",", 1)[1]
+        decoded = base64.b64decode(file_content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 file content: {e}")
+    
+    # Determine file type from filename
+    file_type = "csv"
+    if filename.lower().endswith(('.xlsx', '.xls')):
+        file_type = "xlsx"
+    
+    # Save to temp file
+    suffix = f".{file_type}"
+    with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix=suffix) as tmp:
+        tmp.write(decoded)
+        temp_path = tmp.name
+    
+    try:
+        # Analyze file
+        result = agent.analyze(temp_path, instruction)
+        
+        # Format response to match new interface expectations
+        if result['status'] == 'success':
+            # Return the answer directly as response field
+            response_text = result.get('answer', '')
+        else:
+            # Return error message
+            response_text = f"Error: {result.get('error', 'Unknown error')}"
+        
+        # Schedule cleanup
+        background_tasks.add_task(cleanup_file, temp_path)
+        
+        return AgentRunResponse(response=response_text)
     
     except Exception as e:
         # Cleanup on error

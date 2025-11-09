@@ -25,12 +25,14 @@ class CustomVLLM:
         vllm_endpoint: str,
         model_deployment: str,
         temperature: float = 0.0,
-        max_tokens: int = 2048
+        max_tokens: int = 2048,
+        timeout: int = 180
     ):
         self.vllm_endpoint = vllm_endpoint
         self.model_deployment = model_deployment
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.timeout = timeout
     
     def call(self, prompt: str, system_message: Optional[str] = None) -> str:
         """Call vLLM with custom middleware format"""
@@ -75,7 +77,7 @@ class CustomVLLM:
                 self.vllm_endpoint,
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=60
+                timeout=self.timeout
             )
             
             if response.status_code == 200:
@@ -106,8 +108,19 @@ class DataAnalysisAgent:
         vllm_endpoint: str,
         model_deployment: str,
         max_retries: int = 6,
-        temperature: float = 0.1
+        temperature: float = 0.1,
+        timeout: int = 540
     ):
+        """
+        Initialize the Data Analysis Agent.
+        
+        Args:
+            vllm_endpoint: Endpoint URL for the vLLM service
+            model_deployment: Name of the model deployment to use
+            max_retries: Maximum number of retries for code execution (default: 6)
+            temperature: Temperature for model generation (default: 0.1)
+            timeout: Timeout when agent calls vLLM middleware in seconds (default: 540s)
+        """
         """
         Initialize the data analysis agent.
         
@@ -116,11 +129,13 @@ class DataAnalysisAgent:
             model_deployment: Model deployment name (e.g., 'google/gemma-3-12b-it')
             max_retries: Maximum retry attempts for code execution
             temperature: Model temperature for code generation
+            timeout: Timeout for vLLM requests in seconds (default: 180s)
         """
         self.max_retries = max_retries
         self.vllm_endpoint = vllm_endpoint
         self.model_deployment = model_deployment
         self.temperature = temperature
+        self.timeout = timeout
         
         # Thread-local storage for parallel request handling
         self._thread_local = threading.local()
@@ -130,7 +145,8 @@ class DataAnalysisAgent:
             vllm_endpoint=vllm_endpoint,
             model_deployment=model_deployment,
             temperature=0.0,  # Force deterministic outputs for format compliance
-            max_tokens=2048
+            max_tokens=2048,
+            timeout=timeout
         )
     
     def _get_thread_state(self):
@@ -403,7 +419,7 @@ Available tools:
    - result = df.groupby(['quarter', 'category'])['sales'].sum().reset_index()  # For grouped chart
    
    CRITICAL: When finding max/min/average values:
-   - DON'T return just the number: result = df['sales'].max()  ❌
+   - DON'T return just the number: result = df['sales'].max()  
    - DO return with context: result = df.loc[df['sales'].idxmax(), ['quarter', 'sales']]  ✓
    - DO use groupby to preserve labels: result = df.groupby('category')['value'].sum()  ✓
    

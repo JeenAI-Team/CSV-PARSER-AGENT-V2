@@ -28,6 +28,7 @@ else:
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "6"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.1"))
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "100"))
+AGENT_TO_VLLM_TIMEOUT = int(os.getenv("AGENT_TO_VLLM_TIMEOUT", "540"))  # Timeout when CSV Agent calls vLLM middleware (seconds)
 
 
 def get_agent_config():
@@ -39,7 +40,8 @@ def get_agent_config():
         "vllm_endpoint": VLLM_ENDPOINT,
         "model_deployment": MODEL_DEPLOYMENT,
         "max_retries": MAX_RETRIES,
-        "temperature": TEMPERATURE
+        "temperature": TEMPERATURE,
+        "timeout": AGENT_TO_VLLM_TIMEOUT
     }
 
 

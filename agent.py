@@ -16,8 +16,8 @@ import re
 
 class CustomVLLM:
     """
-    Multi-provider LLM wrapper.
-    Supports: vLLM (custom middleware), Azure OpenAI, OpenAI
+    Custom LLM wrapper for vLLM with middleware format.
+    Compatible with ChatOpenAI interface for vLLM endpoints.
     """
     
     def __init__(
@@ -25,35 +25,22 @@ class CustomVLLM:
         vllm_endpoint: str,
         model_deployment: str,
         temperature: float = 0.0,
-        max_tokens: int = 2048,
-        provider: str = "vllm",  # vllm, azure, openai
-        api_key: Optional[str] = None
+        max_tokens: int = 2048
     ):
         self.vllm_endpoint = vllm_endpoint
         self.model_deployment = model_deployment
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.provider = provider.lower()
-        self.api_key = api_key
     
     def call(self, prompt: str, system_message: Optional[str] = None) -> str:
-        """Call LLM - supports vLLM, Azure OpenAI, OpenAI"""
-        
-        if not system_message:
-            system_message = "You are a helpful AI assistant that follows instructions precisely."
-        
-        if self.provider == "vllm":
-            return self._call_vllm(prompt, system_message)
-        elif self.provider in ["azure", "openai"]:
-            return self._call_openai_compatible(prompt, system_message)
-        else:
-            raise Exception(f"Unsupported provider: {self.provider}")
-    
-    def _call_vllm(self, prompt: str, system_message: str) -> str:
         """Call vLLM with custom middleware format"""
         
         # Clean model name (remove vllm- prefix)
         clean_model = self.model_deployment.replace("google/", "").replace("vllm-", "")
+        
+        # Default system message if not provided
+        if not system_message:
+            system_message = "You are a helpful AI assistant that follows instructions precisely."
         
         # Build payload in middleware format
         payload = {
@@ -61,11 +48,21 @@ class CustomVLLM:
             "inputs": [
                 {
                     "role": "system",
-                    "value": [{"type": "text", "text": system_message}]
+                    "value": [
+                        {
+                            "type": "text",
+                            "text": system_message
+                        }
+                    ]
                 },
                 {
                     "role": "user",
-                    "value": [{"type": "text", "text": prompt}]
+                    "value": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
                 }
             ],
             "stream": False,
@@ -95,46 +92,6 @@ class CustomVLLM:
                 
         except Exception as e:
             raise Exception(f"vLLM call failed: {str(e)}")
-    
-    def _call_openai_compatible(self, prompt: str, system_message: str) -> str:
-        """Call OpenAI/Azure OpenAI with standard format"""
-        
-        # Build standard OpenAI payload
-        payload = {
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens
-        }
-        
-        # Add model for OpenAI
-        if self.provider == "openai":
-            payload["model"] = self.model_deployment
-        
-        # Build headers
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["api-key" if self.provider == "azure" else "Authorization"] = \
-                self.api_key if self.provider == "azure" else f"Bearer {self.api_key}"
-        
-        try:
-            response = requests.post(
-                self.vllm_endpoint,
-                json=payload,
-                headers=headers,
-                timeout=60
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
-            else:
-                raise Exception(f"API request failed: {response.status_code} - {response.text[:200]}")
-                
-        except Exception as e:
-            raise Exception(f"API call failed: {str(e)}")
 
 
 class DataAnalysisAgent:
@@ -149,38 +106,31 @@ class DataAnalysisAgent:
         vllm_endpoint: str,
         model_deployment: str,
         max_retries: int = 6,
-        temperature: float = 0.1,
-        provider: str = "vllm",  # vllm, azure, openai
-        api_key: Optional[str] = None
+        temperature: float = 0.1
     ):
         """
         Initialize the data analysis agent.
         
         Args:
-            vllm_endpoint: LLM endpoint URL (vLLM/Azure/OpenAI)
-            model_deployment: Model deployment name (e.g., 'google/gemma-3-12b-it' for vLLM, 'gpt-4' for Azure)
+            vllm_endpoint: vLLM server endpoint URL (chat format)
+            model_deployment: Model deployment name (e.g., 'google/gemma-3-12b-it')
             max_retries: Maximum retry attempts for code execution
             temperature: Model temperature for code generation
-            provider: LLM provider - 'vllm' (default), 'azure', or 'openai'
-            api_key: API key for Azure/OpenAI (not needed for vLLM)
         """
         self.max_retries = max_retries
         self.vllm_endpoint = vllm_endpoint
         self.model_deployment = model_deployment
         self.temperature = temperature
-        self.provider = provider
         
         # Thread-local storage for parallel request handling
         self._thread_local = threading.local()
         
-        # Initialize LLM (multi-provider support)
+        # Initialize LLM (using CustomVLLM for vLLM compatibility)
         self.llm = CustomVLLM(
             vllm_endpoint=vllm_endpoint,
             model_deployment=model_deployment,
             temperature=0.0,  # Force deterministic outputs for format compliance
-            max_tokens=2048,
-            provider=provider,
-            api_key=api_key
+            max_tokens=2048
         )
     
     def _get_thread_state(self):
@@ -311,12 +261,12 @@ Sample (first 5 rows):
                 return json.dumps(result.to_dict(orient='records'), ensure_ascii=False)
             except:
                 # Fallback to string if JSON serialization fails
-            return result.to_string()
+                return result.to_string()
         elif isinstance(result, pd.Series):
             try:
                 return json.dumps(result.to_dict(), ensure_ascii=False)
             except:
-            return result.to_string()
+                return result.to_string()
         elif isinstance(result, (np.integer, np.floating)):
             return str(result.item())
         elif isinstance(result, np.ndarray):
@@ -582,24 +532,24 @@ File: {file_path}
             # Check for final answer
             final_answer = self._parse_final_answer(response)
             if final_answer:
-            # Get successful execution
-            successful_execution = None
-            for entry in reversed(state['execution_history']):
-                if entry.get('success'):
-                    successful_execution = entry
-                    break
-            
+                # Get successful execution
+                successful_execution = None
+                for entry in reversed(state['execution_history']):
+                    if entry.get('success'):
+                        successful_execution = entry
+                        break
+                
                 # For successful execution, return both formatted answer and raw result
                 result_data = successful_execution.get('result') if successful_execution else None
                 
-            return {
-                "status": "success",
+                return {
+                    "status": "success",
                     "answer": final_answer,
-                "executed_code": successful_execution.get('code') if successful_execution else None,
+                    "executed_code": successful_execution.get('code') if successful_execution else None,
                     "result": result_data,  # JSON formatted DataFrame for Canvas
                     "attempts": iteration + 1,
-                "file_info": state['file_preview']
-            }
+                    "file_info": state['file_preview']
+                }
             
             # Parse action
             action_dict = self._parse_action(response)
@@ -657,12 +607,12 @@ File: {file_path}
             print(f"\n[DEBUG] Scratchpad now has {len(scratchpad)} chars")
         
         # Max iterations reached
-            return {
-                "status": "error",
+        return {
+            "status": "error",
             "error": "Maximum iterations reached without finding answer",
             "attempts": max_iterations,
-                "execution_history": state['execution_history']
-            }
+            "execution_history": state['execution_history']
+        }
 
 
 # Convenience function
